@@ -1,11 +1,11 @@
 from sklearn.base import BaseEstimator
+from sklearn.base import clone
 import numpy as np
 from utils import minority_majority_split, minority_majority_name
 from sklearn.preprocessing import LabelEncoder
 from sklearn.cluster import KMeans
 from sklearn.svm import OneClassSVM
 from sklearn.metrics import silhouette_score
-from sklearn.base import clone
 
 
 class OCEIS(BaseEstimator):
@@ -36,7 +36,7 @@ class OCEIS(BaseEstimator):
         if classes is None and self.classes is None:
             self.label_encoder = LabelEncoder()
             self.label_encoder.fit(y)
-            self.classes = self.label_encoder.classes
+            self.classes = self.label_encoder.classes_
         elif self.classes is None:
             self.label_encoder = LabelEncoder()
             self.label_encoder.fit(classes)
@@ -55,25 +55,41 @@ class OCEIS(BaseEstimator):
             self.minority_name, self.majority_name = minority_majority_name(y)
             self.number_of_features = len(X[0])
 
+        # Prune minority
+        to_delete = []
+        for i, w in enumerate(self.weights_array_min):
+            if w <= 0:
+                to_delete.append(i)
+            self.weights_array_min[i] -= 1
+        to_delete.reverse()
+        for i in to_delete:
+            del self.weights_array_min[i]
+            del self.classifier_array_min[i]
+
+        # Prune majority
+        to_delete = []
+        for i, w in enumerate(self.weights_array_maj):
+            if w <= 0:
+                to_delete.append(i)
+            self.weights_array_maj[i] -= 1
+        to_delete.reverse()
+        for i in to_delete:
+            del self.weights_array_maj[i]
+            del self.classifier_array_maj[i]
+
         # Split data
         minority, majority = minority_majority_split(X, y, self.minority_name, self.majority_name)
 
         samples, n_of_clust = self._best_number_of_clusters(minority, 10)
-        clfs = []
+
         for i in range(n_of_clust):
-            clfs.append(clone(self.base_classifier).fit(samples[i]))
-        self.classifier_array_min.append(clfs)
+            self.classifier_array_min.append(clone(self.base_classifier).fit(samples[i]))
+            self.weights_array_min.append(self.number_of_classifiers)
 
         samples, n_of_clust = self._best_number_of_clusters(majority, 10)
-        clfs = []
         for i in range(n_of_clust):
-            clfs.append(clone(self.base_classifier).fit(samples[i]))
-        self.classifier_array_maj.append(clfs)
-
-        if len(self.classifier_array_maj) > self.number_of_classifiers:
-            del self.classifier_array_maj[-1]
-        if len(self.classifier_array_min) > self.number_of_classifiers:
-            del self.classifier_array_min[-1]
+            self.classifier_array_maj.append(clone(self.base_classifier).fit(samples[i]))
+            self.weights_array_maj.append(self.number_of_classifiers)
 
     def _best_number_of_clusters(self, data, kmax=10):
 
@@ -89,7 +105,7 @@ class OCEIS(BaseEstimator):
             except Exception:
                 break
 
-        best_number = np.argmax(sil_values)
+        best_number = np.argmax(np.array(sil_values))
         n_of_clust = best_number+2
         samples = [[] for i in range(n_of_clust)]
 
@@ -99,12 +115,12 @@ class OCEIS(BaseEstimator):
         return samples, n_of_clust
 
     def predict(self, X):
-        predictions = []
-        for clfs_min, clfs_maj in zip(self.classifier_array_min, self.classifier_array_maj):
-            probas_min = np.max([clf.decision_function(X) for clf in clfs_min], axis=0)
-            probas_maj = np.max([clf.decision_function(X) for clf in clfs_maj], axis=0)
-            probas_ = np.stack((probas_maj, probas_min), axis=1)
-            predictions.append(np.argmax(probas_, axis=1))
+        maj = np.argmax(self.predict_proba(X), axis=1)
+        maj = self.label_encoder.inverse_transform(maj)
+        return maj
 
-        predict = np.apply_along_axis(lambda x: np.argmax(np.bincount(x)), axis=1, arr=np.asarray(predictions).T)
-        return predict
+    def predict_proba(self, X):
+        probas_min = np.max([clf.decision_function(X) for clf in self.classifier_array_min], axis=0)
+        probas_maj = np.max([clf.decision_function(X) for clf in self.classifier_array_maj], axis=0)
+        probas_ = np.stack((probas_maj, probas_min), axis=1)
+        return probas_
