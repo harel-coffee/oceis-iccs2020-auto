@@ -140,7 +140,7 @@ class Evaluation():
         df = df.T
         df.to_csv(filename, header=False)
 
-    def __prepare_data(data):
+    def prepare_data(data):
         df = pd.DataFrame(data)
         features = df.iloc[:, 0:-1].values.astype(float)
         labels = df.iloc[:, -1].values.astype(str)

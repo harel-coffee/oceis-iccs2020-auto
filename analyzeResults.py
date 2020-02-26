@@ -47,7 +47,7 @@ streams += ["real/shuttle-4-5vsA"]                          # 1000 2000
 streams += ["real/shuttle-4vsA"]                            # 1000 2000
 
 method_names = [
-                "OCSVMEnsemble",
+                "OCEIS",
                 "KMeanClustering",
                 "LearnppCDS",
                 "LearnppNIE",
